@@ -144,6 +144,21 @@ export class UIController {
     this.set('stress', Math.round(this.game.physics.report.maxStress * 100) + '%');
     this.set('imbalance', (snap.imbalance >= 0 ? '→ ' : '← ') + Math.round(Math.abs(snap.imbalance) * 100) + '%');
 
+    // v1.1.0 - stagione, distretti, ponti, sicurezza
+    this.set('season', snap.season.icon + ' ' + snap.season.name);
+    this.set('seasonLeft', snap.seasonTurnsLeft);
+    this.set('districts', snap.districts + (snap.starvedDistricts ? ' (' + snap.starvedDistricts + ' isolati)' : ''));
+    this.set('bridges', snap.bridges);
+    this.set('windResist', Math.round(snap.windResistance * 100) + '%');
+    const secNode = this.values.security;
+    if (secNode) {
+      const bad = snap.insecure.length > 0;
+      secNode.textContent = bad
+        ? 'colonne ' + snap.insecure.map((c) => c + 1).join(', ')
+        : (snap.markets > 0 ? 'presidiata' : 'OK');
+      secNode.dataset.tone = bad ? 'bad' : 'good';
+    }
+
     // eventi
     this.set('nextEvent', snap.nextEvent + ' turni');
     this.set('fires', snap.fires);
@@ -154,6 +169,10 @@ export class UIController {
       if (snap.fires > 0) mods.push('🔥 ' + snap.fires + ' incendi attivi');
       if (snap.stats.blackout) mods.push('⚡ Blackout');
       if (snap.stats.drought) mods.push('💧 Carenza idrica');
+      if (snap.season.id === 'inverno') mods.push('❄️ Riscaldamento: consumi RES x2');
+      if (snap.season.id === 'estate') mods.push('☀️ Caldo: centrali a rischio');
+      if (snap.insecure.length) mods.push('🕴️ ' + snap.insecure.length + ' colonne insicure');
+      if (snap.bridges) mods.push('🌉 ' + snap.bridges + ' ponti (-' + Math.round((1 - snap.windResistance) * 100) + '% vento)');
       modNode.textContent = mods.length ? mods.join(' · ') : 'Nessun effetto attivo';
     }
 
@@ -332,6 +351,7 @@ export class UIController {
     const aim = (hit) => {
       const r = this.game.render;
       r.hoverCol = (hit.col >= 0 && hit.col < this.game.grid.cols) ? hit.col : -1;
+      r.hoverRow = hit.row;
       this.updateGhost();
     };
 
@@ -436,7 +456,7 @@ export class UIController {
       if (cell) this.game.demolish(hit.col, hit.row);
       else this.game.sound.error();
     } else {
-      this.game.placeSelected(hit.col);
+      this.game.placeSelected(hit.col, hit.row);
     }
   }
 
@@ -461,12 +481,19 @@ export class UIController {
     const r = this.game.render;
     const type = this.game.selectedType;
     r.ghostType = this.game.mode === 'demolish' ? null : type;
-    if (!type || r.hoverCol < 0) { r.ghostPreview = null; return; }
-    const check = this.game.canPlace(r.hoverCol, type);
+    r.ghostSpan = null;
+    if (!type || r.hoverCol < 0) { r.ghostPreview = null; r.ghostRow = null; return; }
+
+    // i blocchi ancorati si posano nella cella puntata, non in fondo alla colonna
+    const check = this.game.canPlace(r.hoverCol, type, r.hoverRow);
     r.ghostValid = check.ok;
+    r.ghostRow = check.ok ? check.row : r.hoverRow;
+    r.ghostSpan = check.span || null;
+    r.ghostReason = check.ok ? null : check.reason;
     r.ghostPreview = check.ok
       ? this.game.economy.previewPlacement(this.game.grid, r.hoverCol, check.row, type)
       : null;
+    if (check.ok && check.cost) r.ghostPreview.cost = check.cost;
   }
 
   _onKey(ev) {
@@ -484,8 +511,14 @@ export class UIController {
       case 'arrowright': case 'd':
         r.hoverCol = clamp((r.hoverCol < 0 ? 0 : r.hoverCol + 1), 0, this.game.grid.cols - 1);
         this.updateGhost(); ev.preventDefault(); break;
+      case 'arrowup': case 'w':
+        r.hoverRow = clamp((r.hoverRow || 0) + 1, 0, this.game.grid.rows - 1);
+        this.updateGhost(); ev.preventDefault(); break;
+      case 's':
+        r.hoverRow = clamp((r.hoverRow || 0) - 1, 0, this.game.grid.rows - 1);
+        this.updateGhost(); ev.preventDefault(); break;
       case 'arrowdown': case ' ': case 'enter':
-        if (r.hoverCol >= 0) { this.game.placeSelected(r.hoverCol); this.updateGhost(); }
+        if (r.hoverCol >= 0) { this.game.placeSelected(r.hoverCol, r.hoverRow); this.updateGhost(); }
         ev.preventDefault(); break;
       case 'x': this.game.toggleMode(); this.clearArmed(); this.updateGhost(); break;
       case 'n': this.game.skipTurn(); break;
@@ -522,6 +555,10 @@ export class UIController {
       case 'save': this.showSlots('save'); break;
       case 'load': this.showSlots('load'); break;
       case 'help': this.showHelp(); break;
+      case 'tutorial':
+        this.hideModal();
+        if (this.tutorial) setTimeout(() => this.tutorial.start(), 200);
+        break;
       case 'menu': this.showMenu(); break;
       case 'mute': this.toggleMute(btn); break;
       case 'music': this.toggleMusic(btn); break;
@@ -589,6 +626,7 @@ export class UIController {
       });
     }
     actions.push({ label: '💾 Carica slot', onClick: () => this.showSlots('load') });
+    actions.push({ label: '🎓 Tutorial guidato', onClick: () => this.doAction('tutorial') });
     actions.push({ label: '❔ Come si gioca', onClick: () => this.showHelp() });
 
     this.showModal(
@@ -633,7 +671,10 @@ export class UIController {
           '<span><kbd>P</kbd> pausa</span><span><kbd>M</kbd> audio</span>' +
         '</div>' +
       '</div>',
-      [{ label: 'Ho capito', primary: true, onClick: () => this.hideModal() }], 'help');
+      [
+        { label: 'Ho capito', primary: true, onClick: () => this.hideModal() },
+        { label: '🎓 Tutorial guidato', onClick: () => this.doAction('tutorial') }
+      ], 'help');
   }
 
   showSlots(mode) {

@@ -47,7 +47,7 @@ export class PhysicsSystem {
    * Analisi completa (non distruttiva): aggiorna load/capacity/stress di ogni
    * cella e calcola centro di massa, sbilanciamento e indice di stabilita.
    */
-  analyze(grid, weather = null) {
+  analyze(grid, weather = null, opts = {}) {
     let totalWeight = 0, momentX = 0, momentY = 0, maxStress = 0;
     const criticalCells = [];
 
@@ -83,7 +83,12 @@ export class PhysicsSystem {
     // Il vento spinge lateralmente in proporzione all'altezza esposta
     const wind = weather ? weather.windVector : 0;
     const heightFactor = grid.maxHeight() / grid.rows;
-    const windPush = wind * heightFactor * (1 + com.y / grid.rows) * CONFIG.PHYSICS.WIND_FACTOR * 12;
+    // v1.1.0: i ponti sospesi irrigidiscono la struttura (windResistance < 1),
+    // mentre in autunno le raffiche aumentano (windMult > 1).
+    const resist = opts.windResistance === undefined ? 1 : opts.windResistance;
+    const seasonWind = opts.windMult || 1;
+    const windPush = wind * seasonWind * resist * heightFactor *
+      (1 + com.y / grid.rows) * CONFIG.PHYSICS.WIND_FACTOR * 12;
     const effectiveImbalance = imbalance + windPush;
 
     const stressPart = clamp(1 - maxStress, 0, 1);
@@ -91,7 +96,7 @@ export class PhysicsSystem {
     const stability = clamp(Math.min(stressPart, balancePart), 0, 1);
 
     this.report = {
-      totalWeight, com, footprint, imbalance, effectiveImbalance,
+      totalWeight, com, footprint, imbalance, effectiveImbalance, windResistance: resist,
       maxStress, stability, criticalCells,
       tilt: clamp(effectiveImbalance, -2, 2) * CONFIG.PHYSICS.TILT_VISUAL
     };
@@ -110,8 +115,8 @@ export class PhysicsSystem {
    * Risoluzione di fine turno: crepe da sovraccarico, torsione da
    * sbilanciamento e crolli conseguenti. Ritorna l'elenco dei crolli.
    */
-  resolveTurn(grid, weather = null) {
-    const rep = this.analyze(grid, weather);
+  resolveTurn(grid, weather = null, opts = {}) {
+    const rep = this.analyze(grid, weather, opts);
     const doomed = [];
     const P = CONFIG.PHYSICS;
 
@@ -151,7 +156,7 @@ export class PhysicsSystem {
     }
 
     const collapses = this.applyCollapses(grid, doomed);
-    if (collapses.length) this.analyze(grid, weather);
+    if (collapses.length) this.analyze(grid, weather, opts);
     return collapses;
   }
 

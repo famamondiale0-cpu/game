@@ -44,6 +44,8 @@ export class FakeElement {
   querySelector() { return new FakeElement(); }
   querySelectorAll() { return []; }
   getBoundingClientRect() { return { left: 0, top: 0, width: 1280, height: 760, right: 1280, bottom: 760 }; }
+  get offsetHeight() { return 210; }
+  get offsetWidth() { return 360; }
   focus() {}
 }
 
@@ -92,7 +94,10 @@ export function installDom() {
     body,
     documentElement: new FakeElement('html'),
     createElement: (tag) => new FakeElement(tag),
-    getElementById: (id) => registry.get(id) || null,
+    getElementById: (id) => {
+      if (!registry.has(id)) registry.set(id, new FakeElement());
+      return registry.get(id);
+    },
     querySelector: (sel) => (sel === '#game' ? canvas : new FakeElement()),
     querySelectorAll: () => [],
     addEventListener: () => {},

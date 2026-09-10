@@ -4,7 +4,7 @@
  */
 
 export const CONFIG = {
-  VERSION: '1.0.0',
+  VERSION: '1.1.0',
   TITLE: 'ZENITH BLOCK',
 
   GRID: {
@@ -100,6 +100,48 @@ export const CONFIG = {
     SLOTS: 3,
     AUTOSLOT: 0
   },
+
+/** v1.1.0 - Ponti sospesi fra colonne staccate. */
+  SKYBRIDGE: {
+    MIN_ROW: 4,               // riga 4 = quinto livello
+    MAX_SPAN: 4,              // campata massima in celle vuote
+    WIND_BONUS: 0.3,          // -30% di spinta del vento per ponte
+    MAX_BONUS: 0.6            // tetto cumulativo del bonus
+  },
+
+  /** v1.1.0 - Elisuperficie e turismo VIP. */
+  HELIPAD: {
+    INTERVAL: 3,              // turni fra un arrivo VIP e il successivo
+    INCOME: 85,               // monete per arrivo
+    NOISE_DEPTH: 2,           // residenziali sottostanti colpiti dal rumore
+    NOISE_PENALTY: 7          // felicita sottratta a ciascuno
+  },
+
+  /** v1.1.0 - Edifici idroponici viventi. */
+  ECO: {
+    GROWTH_TURNS: 5,          // turni necessari per espandersi
+    SPRING_TURNS: 3,          // in primavera cresce piu in fretta
+    MAX_GENERATIONS: 2,       // quante volte una singola cella puo generare
+    WATER_RANGE: 1            // distanza massima da una fonte d acqua
+  },
+
+  /** v1.1.0 - Mercato nero e sicurezza. */
+  BLACK_MARKET: {
+    MAX_ROW: 2,               // solo nelle prime 3 righe
+    INSTANT_COINS: [280, 460],
+    TAX_PENALTY: 0.4,         // -40% di gettito alle residenze della colonna
+    POLICE_RADIUS: 3          // raggio di copertura di una stazione di polizia
+  },
+
+  /** v1.1.0 - Ciclo delle stagioni. */
+  SEASONS: {
+    LENGTH: 20,               // turni per stagione
+    WINTER_ENERGY_MULT: 2,    // riscaldamento: consumo residenziale raddoppiato
+    SUMMER_FIRE_MULT: 2.2,    // rischio incendio delle centrali in sovraccarico
+    SUMMER_OVERLOAD_IGNITION: 0.18,
+    AUTUMN_WIND_MULT: 1.35
+  }
+,
 
   LEVELS: [
     { population: 40,  happiness: 45, maxPollution: 70, reward: 400,  name: 'Distretto Alba' },

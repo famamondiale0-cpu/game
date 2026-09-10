@@ -151,14 +151,123 @@ export const BLOCK_DEFS = {
     synergy: [],
     isSupport: true,
     desc: 'Trave in acciaio: raddoppia la tolleranza al peso della colonna.'
+  },
+  // ─────────────────────────── v1.1.0 ───────────────────────────
+
+  BRG: {
+    type: 'BRG',
+    name: 'Ponte Sospeso',
+    short: 'BRG',
+    icon: '🌉',
+    category: 'struttura',
+    color: '#6C7BA8',
+    colorDark: '#2E3550',
+    colorLight: '#AEBBDD',
+    cost: 70,
+    upkeep: 2,
+    weight: 18,
+    capacity: 240,
+    effects: {},
+    synergy: [],
+    anchored: true,          // non cade: e sospeso fra due appoggi
+    spanning: true,          // riempie l'intera campata in un colpo solo
+    minRow: 4,               // solo dal quinto livello in su
+    isSupport: false,
+    desc: 'Collega due colonne staccate: unisce le reti di energia e acqua e irrigidisce la struttura contro il vento.'
+  },
+
+  HEL: {
+    type: 'HEL',
+    name: 'Elisuperficie',
+    short: 'HEL',
+    icon: '🚁',
+    category: 'economia',
+    color: '#B0BEC5',
+    colorDark: '#4A5559',
+    colorLight: '#E3EAED',
+    cost: 150,
+    upkeep: 5,
+    weight: 22,
+    capacity: 200,
+    effects: { coins: 0 },
+    synergy: [],
+    requiresSupport: true,   // deve poggiare su qualcosa
+    blocksAbove: true,       // niente costruzioni sopra: la pista resta libera
+    vipIncome: true,
+    desc: 'Attira turismo VIP a intervalli regolari, ma il rumore toglie felicita ai residenziali sottostanti.'
+  },
+
+  ECO: {
+    type: 'ECO',
+    name: 'Idroponico',
+    short: 'ECO',
+    icon: '🌱',
+    category: 'ambiente',
+    color: '#57D9A3',
+    colorDark: '#1B6B4C',
+    colorLight: '#B8F5DA',
+    cost: 60,
+    upkeep: 1,
+    weight: 8,
+    capacity: 110,
+    effects: { happiness: 4, pollution: -3, water: -1 },
+    synergy: [
+      { with: ['PAR'], happiness: 2, label: '+2 Felicita (continuita del verde)' }
+    ],
+    anchored: true,          // si aggrappa alle strutture vicine
+    needsNeighbor: true,
+    grows: true,
+    desc: 'Coltura verticale viva: vicino all acqua si espande da sola in una cella libera adiacente.'
+  },
+
+  BLK: {
+    type: 'BLK',
+    name: 'Mercato Nero',
+    short: 'BLK',
+    icon: '🕴️',
+    category: 'economia',
+    color: '#7E57C2',
+    colorDark: '#37236B',
+    colorLight: '#C0A8F0',
+    cost: 90,
+    upkeep: 2,
+    weight: 32,
+    capacity: 250,
+    effects: { coins: 6, happiness: -2 },
+    synergy: [],
+    maxRow: 2,               // solo nelle prime tre righe
+    instantPayout: true,
+    insecure: true,          // rende insicura la colonna se non sorvegliato
+    desc: 'Incasso immediato enorme, ma senza una stazione di polizia vicina le residenze della colonna perdono gettito.'
+  },
+
+  POL: {
+    type: 'POL',
+    name: 'Polizia',
+    short: 'POL',
+    icon: '🚓',
+    category: 'utility',
+    color: '#2F6FD0',
+    colorDark: '#123566',
+    colorLight: '#8FBBF5',
+    cost: 85,
+    upkeep: 4,
+    weight: 30,
+    capacity: 260,
+    effects: { happiness: 2, energy: -1 },
+    synergy: [],
+    providesSecurity: true,
+    desc: 'Presidia il quartiere: annulla l insicurezza dei mercati neri nel raggio di 3 celle.'
   }
 };
+
 
 export const BLOCK_TYPES = Object.keys(BLOCK_DEFS);
 
 /** Pesi di pescata dal mazzo: i blocchi economici sono piu rari. */
 export const DRAW_WEIGHTS = {
-  RES: 26, COM: 16, IND: 10, PAR: 16, POW: 9, WAT: 10, SUP: 13
+  RES: 24, COM: 14, IND: 9, PAR: 14, POW: 8, WAT: 9, SUP: 12,
+  BRG: 5, HEL: 4, ECO: 7, BLK: 4, POL: 5
 };
 
 export class BlockFactory {

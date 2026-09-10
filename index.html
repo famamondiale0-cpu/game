@@ -2,20 +2,25 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <meta name="description" content="Zenith Block - city builder puzzle verticale in HTML5 Canvas e JavaScript vanilla." />
-<meta name="theme-color" content="#0b0f1c" />
-<title>ZENITH BLOCK — Vertical Metropolis</title>
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="css/style.css" />
-<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#121212" />
+<meta name="color-scheme" content="dark" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Zenith Block" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🏙️</text></svg>" />
+<meta name="application-name" content="Zenith Block" />
+<meta name="format-detection" content="telephone=no" />
+<title>ZENITH BLOCK - Vertical Metropolis</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+<link rel="icon" type="image/png" sizes="32x32" href="assets/favicon-32.png" />
+<link rel="icon" type="image/svg+xml" href="assets/icon.svg" />
 </head>
 <body data-state="MENU" data-mode="build">
 
@@ -66,6 +71,7 @@
       <div class="weather-chip">
         <b data-ui="weather">☀️ Sereno</b>
         <small><span data-ui="clock">07:30</span> · <span data-ui="day">G1</span> · vento <span data-ui="wind">0%</span></small>
+        <small class="season-line"><span data-ui="season">☀️ Estate</span> · <span data-ui="seasonLeft">20</span> turni</small>
       </div>
       <div class="tools">
         <button class="icon-btn" data-action="pause" title="Pausa (P)">⏸</button>
@@ -111,12 +117,16 @@
       <div class="stat-row"><span>Sbilanciamento</span><b data-ui="imbalance">→ 0%</b></div>
       <div class="stat-row"><span>Altezza</span><b data-ui="height">0/20</b></div>
       <div class="stat-row"><span>Blocchi</span><b data-ui="blocks">0</b></div>
+      <div class="stat-row"><span>Distretti</span><b data-ui="districts">0</b></div>
+      <div class="stat-row"><span>Ponti sospesi</span><b data-ui="bridges">0</b></div>
+      <div class="stat-row"><span>Rigidita al vento</span><b data-ui="windResist">100%</b></div>
     </section>
 
     <section class="card-box">
       <h2>⚠️ Eventi</h2>
       <div class="stat-row"><span>Prossimo evento</span><b data-ui="nextEvent">4 turni</b></div>
       <div class="stat-row"><span>Incendi attivi</span><b data-ui="fires">0</b></div>
+      <div class="stat-row"><span>Sicurezza</span><b data-ui="security" data-tone="good">OK</b></div>
       <p class="mods" data-ui="modifiers">Nessun effetto attivo</p>
     </section>
   </aside>
@@ -161,6 +171,21 @@
 </div>
 
 <div id="tooltip" class="tooltip" hidden></div>
+
+<!-- ══════════ TUTORIAL GUIDATO ══════════ -->
+<div id="tutorial" class="tutorial" hidden>
+  <div id="tutorial-spot" class="tutorial-spot"></div>
+  <div id="tutorial-card" class="tutorial-card" data-place="center">
+    <span id="tutorial-progress" class="tutorial-progress">1 / 12</span>
+    <h2 id="tutorial-title"></h2>
+    <p id="tutorial-text"></p>
+    <p id="tutorial-wait" class="tutorial-wait" hidden></p>
+    <div class="tutorial-actions">
+      <button id="tutorial-skip" class="btn ghost">Salta</button>
+      <button id="tutorial-next" class="btn primary">Avanti</button>
+    </div>
+  </div>
+</div>
 
 <div id="modal" class="modal" hidden>
   <div class="modal-card">

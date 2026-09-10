@@ -23,7 +23,7 @@ In alternativa, in VS Code, l'estensione **Live Server** sul file `index.html`.
 ### Test
 
 ```bash
-npm test             # 85 test: logica, smoke test con DOM simulato e controlli mobile
+npm test             # 153 test: logica, DOM simulato, mobile, meccaniche 1.1.0, tutorial
 npm run balance      # sonda di bilanciamento: gioca 6 partite e stampa le medie
 ```
 
@@ -65,9 +65,75 @@ La regola viene applicata **una volta per ogni vicino** compatibile.
 | 💧 **WAT** Serbatoio | 55 | 35 kg | 290 kg | +20 acqua | spegne gli incendi adiacenti (75%) |
 | 🔩 **SUP** Trave | 30 | 20 kg | 820 kg | nessuna produzione | **×2 tolleranza** per tutta la colonna sopra (max ×4) |
 
+| 🌉 **BRG** Ponte Sospeso | 70/cella | 18 kg | 240 kg | nessuna produzione | dal livello 5, campata max 4 celle: fonde le reti e **-30% vento** |
+| 🚁 **HEL** Elisuperficie | 150 | 22 kg | 200 kg | +85 monete ogni 3 turni | solo in cima; **-7 felicità** ai 2 RES sottostanti |
+| 🌱 **ECO** Idroponico | 60 | 8 kg | 110 kg | +4 felicità, −3 inquinamento | vicino all acqua **si espande da solo** ogni 5 turni |
+| 🕴️ **BLK** Mercato Nero | 90 | 32 kg | 250 kg | +280-460 monete subito | solo prime 3 righe; senza POL vicina **−40% gettito** della colonna |
+| 🚓 **POL** Polizia | 85 | 30 kg | 260 kg | +2 felicità, −1 energia | annulla l insicurezza entro 3 celle |
+
 I costi seguono una **curva di domanda**: ogni copia già costruita rincara il tipo
 del 9% (tetto ×4). Demolire fa riscendere il prezzo.
 Ogni tipo ha inoltre una **manutenzione** per turno (IND 10, POW 6, COM 4, WAT 3, RES/PAR 1, SUP 0).
+
+---
+
+## 🆕 Novità della 1.1.0
+
+### Distretti e reti separate
+
+Energia e acqua **non sono più un serbatoio unico**: ogni gruppo di blocchi collegati fra loro
+(un *distretto*) ha la propria rete, e la fornitura municipale è ripartita in proporzione alle
+colonne che poggiano a terra. Due torri separate hanno due reti indipendenti: se una ha la
+centrale e l altra no, la seconda va in deficit.
+
+### 🌉 Ponti sospesi
+
+Si posano puntando una **cella vuota dal livello 5 in su** con blocchi solidi a sinistra e a
+destra (campata massima 4 celle). Non cadono. Riempiono l intera campata in un colpo solo,
+pagando un segmento per cella, e da quel momento le due torri sono **un unico distretto**:
+energia e acqua vengono condivise. Ogni ponte riduce del 30% la spinta del vento (tetto 60%).
+Se uno dei due appoggi crolla, la campata cade.
+
+### 🚁 Elisuperficie e turismo VIP
+
+Va **in cima a una colonna** e blocca ogni costruzione sopra di sé. Ogni 3 turni incassa
+85 monete per pista, ma il rumore toglie 7 punti di felicità ai due residenziali sottostanti:
+conviene metterla sopra uffici o industrie, non sopra le case.
+
+### 🌱 Colture idroponiche
+
+Blocco **ancorato**: si aggrappa a una struttura adiacente invece di cadere. Se tocca un
+serbatoio — anche attraverso una catena di altre colture — matura in 5 turni (3 in primavera)
+e **si espande gratis** in una cella libera adiacente, fino a 2 generazioni per cella.
+È il modo più efficiente per tenere basso l inquinamento.
+
+### 🕴️ Mercato nero e 🚓 polizia
+
+Il mercato nero si costruisce **solo nelle prime 3 righe** e paga subito 280-460 monete.
+In cambio rende insicura la sua colonna: finché non c è una stazione di polizia entro 3 celle,
+le residenze di quella colonna versano il **40% di tasse in meno**. Il pannello Eventi mostra
+quali colonne sono scoperte.
+
+### 🍂 Stagioni
+
+| Stagione | Effetto sulle regole |
+|---|---|
+| ☀️ Estate | le centrali in sovraccarico o soffocate possono incendiarsi da sole (18% a turno) |
+| 🍂 Autunno | raffiche più forti: +35% di spinta del vento sullo sbilanciamento |
+| ❄️ Inverno | riscaldamento: **consumo energetico dei residenziali raddoppiato** |
+| 🌷 Primavera | le colture idroponiche crescono in 3 turni invece di 5 |
+
+Il cambio avviene ogni **20 turni** ed è annunciato nella cronaca; il cielo cambia tinta.
+
+---
+
+## 🎓 Tutorial guidato
+
+Alla prima partita parte un onboarding di **12 passi** con riflettore sugli elementi
+dell interfaccia e sulla griglia. Tre passi non si sbloccano finché il giocatore non compie
+davvero l azione (selezionare una carta, costruire una casa, costruire un parco) e la mano
+viene preparata perché l istruzione sia sempre eseguibile. Si può saltare in ogni momento e
+rigiocare dal menu (🎓 Tutorial guidato) o dalla schermata di aiuto.
 
 ---
 
@@ -251,6 +317,7 @@ Il gioco è pensato anche per il tocco:
   trascinamento della pagina, bersagli di tocco da 44 px.
 * **Manifest PWA**: si può installare dalla home schermo e parte a schermo intero in verticale.
 * Su dispositivi a tocco la densità di particelle scende al 55% per non appesantire la GPU.
+* **Installabile**: PWA con Service Worker, funziona offline e si apre a schermo intero.
 
 ## 📋 Compatibilità
 
@@ -258,6 +325,45 @@ Chrome / Edge / Firefox / Safari recenti (moduli ES, Canvas 2D, Web Audio, `loca
 L'audio parte al primo click o tasto premuto, come richiesto dalle policy dei browser.
 Layout responsive dal desktop al telefono (vedi sezione dedicata), con supporto a
 `prefers-reduced-motion` e alle aree sicure dei dispositivi con notch.
+
+## 🚀 Pubblicazione su GitHub Pages
+
+1. Crea il repository e carica tutto il contenuto della cartella, **compreso `.nojekyll`**.
+2. Su GitHub: **Settings → Pages → Source: Deploy from a branch**, ramo `main`, cartella `/ (root)`.
+3. Dopo un minuto il gioco è online su `https://<utente>.github.io/<repo>/`.
+
+Tutti i percorsi sono **relativi** (`./sw.js`, `manifest.json`, `assets/…`), quindi il gioco
+funziona anche in una sottocartella senza modifiche. Il file `.nojekyll` impedisce a Jekyll di
+filtrare i file del progetto.
+
+> Dopo ogni aggiornamento del codice conviene alzare la costante `VERSION` in [sw.js](sw.js):
+> il Service Worker elimina le cache vecchie e distribuisce subito la nuova build.
+
+## 📦 Da PWA ad APK Android (PWABuilder)
+
+1. Vai su [pwabuilder.com](https://www.pwabuilder.com) e incolla l'URL di GitHub Pages.
+2. Il report deve trovare: manifest valido, Service Worker attivo, icone PNG 192 e 512,
+   `start_url`, `display: standalone`, `theme_color`. Sono già tutti presenti.
+3. **Package for stores → Android** → scegli *Signed APK* (o AAB per il Play Store).
+4. Scarica lo zip: contiene APK/AAB, la chiave di firma e `assetlinks.json`.
+5. Per togliere la barra dell'indirizzo (Digital Asset Links) pubblica `assetlinks.json` in
+   `.well-known/assetlinks.json` dentro il repository.
+
+Note utili:
+
+- Il campo `id` del manifest è `/zenith-block/`: cambialo se pubblichi con un nome di repo diverso.
+- PWABuilder segnala l'assenza di `screenshots` nel manifest: è solo un avviso e non blocca la
+  generazione del pacchetto. Per eliminarlo aggiungi due PNG e l'array `screenshots`.
+- Il gioco è pensato in verticale: il manifest impone `orientation: portrait`.
+
+## 🔄 Rigenerare le icone
+
+```bash
+npm run icons     # ricrea assets/icon-*.png con un encoder PNG scritto a mano
+```
+
+Per cambiarne il disegno modifica la funzione `drawIcon()` in
+[tools/make-icons.mjs](tools/make-icons.mjs).
 
 ## 📄 Licenza
 

@@ -37,7 +37,8 @@ export class EconomyEngine {
       waterProd: 0, waterUse: 0, waterBalance: 0,
       pollutionRate: 0, income: 0, upkeep: 0, netIncome: 0,
       blocks: 0, blackout: false, drought: false, taxes: 0,
-      energyDeficit: 0, waterDeficit: 0,
+      energyDeficit: 0, waterDeficit: 0, districts: 0, starvedDistricts: 0,
+      noisedHomes: 0, insecureTaxLoss: 0, vip: 0,
       synergyBonus: 0, malus: 0, perCell: new Map()
     };
   }
@@ -79,7 +80,15 @@ export class EconomyEngine {
   /**
    * Ricalcola tutti gli indicatori dalla griglia. Non muta le risorse:
    * viene usata sia per il turno reale sia per le anteprime.
-   * mods: moltiplicatori temporanei da eventi (es. ondata di immigrazione).
+   *
+   * v1.1.0 - energia e acqua non sono piu un unico serbatoio cittadino: ogni
+   * DISTRETTO (componente connessa di blocchi) ha la propria rete. Un ponte
+   * sospeso, unendo due torri, ne fonde le reti. La fornitura municipale e
+   * ripartita in proporzione alle colonne che poggiano a terra.
+   *
+   * mods: { resMultiplier, comMultiplier, indMultiplier,  (eventi)
+   *         resEnergyMult,                                (stagione)
+   *         taxMultiplier(col) }                          (sicurezza)
    */
   evaluate(grid, mods = {}) {
     const stats = this._emptyStats();
@@ -87,36 +96,83 @@ export class EconomyEngine {
     const resMul = mods.resMultiplier || 1;
     const comMul = mods.comMultiplier || 1;
     const indMul = mods.indMultiplier || 1;
+    const winterMul = mods.resEnergyMult || 1;
+    const taxMul = typeof mods.taxMultiplier === 'function' ? mods.taxMultiplier : () => 1;
 
-    // --- Passata 1: flussi grezzi di energia e acqua ---
-    // La rete cittadina fornisce una quota base: le prime costruzioni non
-    // vanno subito in blackout.
-    stats.energyProd = CONFIG.ECONOMY.BASE_ENERGY;
-    stats.waterProd = CONFIG.ECONOMY.BASE_WATER;
+    const districts = grid.components();
+    const groundTotal = districts.reduce((s, d) => s + d.groundCols.size, 0);
+    const share = (d) => (groundTotal > 0 ? d.groundCols.size / groundTotal : 0);
+
+    const nets = districts.map((d) => ({
+      district: d,
+      energyProd: CONFIG.ECONOMY.BASE_ENERGY * share(d),
+      energyUse: 0,
+      waterProd: CONFIG.ECONOMY.BASE_WATER * share(d),
+      waterUse: 0
+    }));
+    const netOf = (cell) => nets[cell.district] || nets[0];
+
+    // --- Passata 1: flussi di energia e acqua, rete per rete ---
     grid.each((cell) => {
       const e = BlockFactory.def(cell.type).effects;
       const eff = this._efficiency(cell);
+      const net = netOf(cell);
       stats.blocks++;
       stats.upkeep += BlockFactory.upkeep(cell.type);
-      if (e.energy > 0) stats.energyProd += e.energy * eff;
-      else if (e.energy < 0) stats.energyUse += -e.energy;
-      if (e.water > 0) stats.waterProd += e.water * eff;
-      else if (e.water < 0) stats.waterUse += -e.water;
+      if (!net) return;
+
+      if (e.energy > 0) net.energyProd += e.energy * eff;
+      else if (e.energy < 0) {
+        // Inverno: il riscaldamento raddoppia i consumi dei residenziali
+        net.energyUse += -e.energy * (cell.type === 'RES' ? winterMul : 1);
+      }
+      if (e.water > 0) net.waterProd += e.water * eff;
+      else if (e.water < 0) net.waterUse += -e.water;
     });
 
+    if (!nets.length) {
+      stats.energyProd = CONFIG.ECONOMY.BASE_ENERGY;
+      stats.waterProd = CONFIG.ECONOMY.BASE_WATER;
+    }
+
+    for (const net of nets) {
+      net.energyBalance = net.energyProd - net.energyUse;
+      net.waterBalance = net.waterProd - net.waterUse;
+      net.energyDeficit = clamp(-net.energyBalance / Math.max(1, net.energyUse), 0, 1);
+      net.waterDeficit = clamp(-net.waterBalance / Math.max(1, net.waterUse), 0, 1);
+      net.outputMul = 1 - (1 - CONFIG.ECONOMY.BROWNOUT_PENALTY) * net.energyDeficit;
+      net.popMul = (1 - 0.45 * net.energyDeficit) * (1 - 0.35 * net.waterDeficit);
+
+      stats.energyProd += net.energyProd;
+      stats.energyUse += net.energyUse;
+      stats.waterProd += net.waterProd;
+      stats.waterUse += net.waterUse;
+    }
+
+    stats.districts = nets.length;
+    stats.starvedDistricts = nets.filter((n) => n.energyDeficit > 0.05 || n.waterDeficit > 0.05).length;
     stats.energyBalance = stats.energyProd - stats.energyUse;
     stats.waterBalance = stats.waterProd - stats.waterUse;
-    // Penalita GRADUALE: conta quanto manca, non solo se manca.
-    // Un deficit dell'1% quasi non si sente, uno del 100% dimezza la citta.
     stats.energyDeficit = clamp(-stats.energyBalance / Math.max(1, stats.energyUse), 0, 1);
     stats.waterDeficit = clamp(-stats.waterBalance / Math.max(1, stats.waterUse), 0, 1);
-    stats.blackout = stats.energyDeficit > 0;
-    stats.drought = stats.waterDeficit > 0;
+    stats.blackout = nets.some((n) => n.energyDeficit > 0);
+    stats.drought = nets.some((n) => n.waterDeficit > 0);
 
-    const outputMul = 1 - (1 - CONFIG.ECONOMY.BROWNOUT_PENALTY) * stats.energyDeficit;
-    const popMul = (1 - 0.45 * stats.energyDeficit) * (1 - 0.35 * stats.waterDeficit);
+    // --- Rumore delle elisuperfici: colpisce i residenziali sottostanti ---
+    const noise = new Map();
+    for (const pad of grid.listByType('HEL')) {
+      let hit = 0;
+      for (let r = pad.row - 1; r >= 0 && hit < CONFIG.HELIPAD.NOISE_DEPTH; r--) {
+        const below = grid.get(pad.col, r);
+        if (!below) break;
+        if (below.type !== 'RES') continue;
+        noise.set(below.id, (noise.get(below.id) || 0) + CONFIG.HELIPAD.NOISE_PENALTY);
+        hit++;
+      }
+    }
+    stats.noisedHomes = noise.size;
 
-    // --- Passata 2: effetti, sinergie e malus cella per cella ---
+    // --- Passata 2: effetti, sinergie, tasse e malus cella per cella ---
     let happinessSum = 0;
     let pollutionRate = 0;
 
@@ -124,11 +180,12 @@ export class EconomyEngine {
       const def = BlockFactory.def(cell.type);
       const e = def.effects;
       const eff = this._efficiency(cell);
+      const net = netOf(cell) || { outputMul: 1, popMul: 1 };
       const typeMul = cell.type === 'RES' ? resMul
         : cell.type === 'COM' ? comMul
         : cell.type === 'IND' ? indMul : 1;
 
-      const entry = { coins: 0, happiness: 0, population: 0, pollution: 0, links: [] };
+      const entry = { coins: 0, happiness: 0, population: 0, pollution: 0, taxes: 0, links: [] };
       entry.coins += (e.coins || 0) * eff * typeMul;
       entry.happiness += (e.happiness || 0) * eff;
       entry.population += (e.population || 0) * eff * typeMul;
@@ -149,12 +206,25 @@ export class EconomyEngine {
         }
       }
 
+      // Rumore aereo sulle abitazioni sotto un'elisuperficie
+      const noiseHit = noise.get(cell.id);
+      if (noiseHit) { entry.happiness -= noiseHit; stats.malus += noiseHit; }
+
       if (cell.burning > 0) entry.happiness -= 6;
       if (cell.integrity < 50) entry.happiness -= 2;
 
+      // Popolazione e gettito fiscale: la colonna insicura rende meno
+      const pop = entry.population * net.popMul;
+      if (pop > 0) {
+        const secure = taxMul(col);
+        entry.taxes = pop * CONFIG.ECONOMY.TAX_PER_POP * secure;
+        if (secure < 1) stats.insecureTaxLoss += pop * CONFIG.ECONOMY.TAX_PER_POP * (1 - secure);
+      }
+
       perCell.set(cell.id, entry);
-      stats.income += Math.max(0, entry.coins) * outputMul;
-      stats.population += entry.population * popMul;
+      stats.income += Math.max(0, entry.coins) * net.outputMul;
+      stats.taxes += entry.taxes;
+      stats.population += pop;
       happinessSum += entry.happiness;
       pollutionRate += entry.pollution;
     });
@@ -162,8 +232,8 @@ export class EconomyEngine {
     stats.population = Math.round(stats.population);
     stats.pollutionRate = pollutionRate;
     stats.upkeep = Math.round(stats.upkeep);
-    // Gettito fiscale: ogni abitante versa le tasse a ogni turno
-    stats.taxes = Math.round(stats.population * CONFIG.ECONOMY.TAX_PER_POP);
+    stats.taxes = Math.round(stats.taxes);
+    stats.insecureTaxLoss = Math.round(stats.insecureTaxLoss);
     stats.income = Math.round(stats.income) + stats.taxes;
     stats.netIncome = Math.round(stats.income - stats.upkeep);
 
@@ -180,8 +250,17 @@ export class EconomyEngine {
   }
 
   /** Applica un turno: incassa, paga manutenzione, aggiorna inquinamento. */
-  applyTurn(grid, mods = {}, weather = null) {
+  applyTurn(grid, mods = {}, weather = null, turn = 0) {
     const stats = this.evaluate(grid, mods);
+
+    // v1.1.0 - Turismo VIP: le elisuperfici incassano a intervalli regolari
+    const pads = grid.listByType('HEL');
+    if (pads.length && turn > 0 && turn % CONFIG.HELIPAD.INTERVAL === 0) {
+      stats.vip = pads.reduce((sum, p) => sum + CONFIG.HELIPAD.INCOME * this._efficiency(p), 0);
+      stats.vip = Math.round(stats.vip);
+      this.earn(stats.vip);
+      this.bus.emit(EVT.VIP_ARRIVAL, { pads, amount: stats.vip });
+    }
 
     if (stats.netIncome >= 0) this.earn(stats.netIncome);
     else this.coins = Math.max(0, this.coins + stats.netIncome);
@@ -206,7 +285,7 @@ export class EconomyEngine {
 
     const summary = {
       income: stats.income, upkeep: stats.upkeep, net: stats.netIncome,
-      pollutionDelta, scoreGained: gained, stats
+      vip: stats.vip, pollutionDelta, scoreGained: gained, stats
     };
     this.bus.emit(EVT.ECONOMY_UPDATE, summary);
     return summary;

@@ -17,6 +17,10 @@ import { EconomyEngine } from '../systems/EconomyEngine.js';
 import { PhysicsSystem } from '../systems/PhysicsSystem.js';
 import { WeatherSystem } from '../systems/WeatherSystem.js';
 import { EventSystem } from '../systems/EventSystem.js';
+import { SeasonSystem } from '../systems/SeasonSystem.js';
+import { SkybridgeSystem } from '../systems/SkybridgeSystem.js';
+import { GrowthSystem } from '../systems/GrowthSystem.js';
+import { SecuritySystem } from '../systems/SecuritySystem.js';
 import { ParticleEngine } from '../systems/ParticleEngine.js';
 import { SoundEngine } from '../systems/SoundEngine.js';
 import { SaveSystem } from '../systems/SaveSystem.js';
@@ -36,6 +40,10 @@ export class Game {
     this.physics = new PhysicsSystem(this.bus);
     this.weather = new WeatherSystem(this.bus, this.rng);
     this.events = new EventSystem(this.bus, this.rng);
+    this.season = new SeasonSystem(this.bus);
+    this.bridges = new SkybridgeSystem(this.bus);
+    this.growth = new GrowthSystem(this.bus, this.rng);
+    this.security = new SecuritySystem(this.bus);
     this.particles = new ParticleEngine();
     this.sound = new SoundEngine();
     this.save = new SaveSystem(this.bus);
@@ -67,6 +75,10 @@ export class Game {
     this.physics.reset();
     this.weather.reset();
     this.events.reset();
+    this.season.reset();
+    this.bridges.reset();
+    this.growth.reset();
+    this.security.reset();
     this.particles.clear();
 
     this.turn = 0;
@@ -78,8 +90,8 @@ export class Game {
     for (let i = 0; i < CONFIG.START.HAND_SIZE; i++) this.hand.push(this._drawType());
     for (let i = 0; i < 3; i++) this.queue.push(this._drawType());
 
-    this.economy.evaluate(this.grid, this.events.modifiers);
-    this.physics.analyze(this.grid, this.weather);
+    this.economy.evaluate(this.grid, this.mods);
+    this.physics.analyze(this.grid, this.weather, this.physicsOpts);
 
     this.engine.setState(STATE.PLAY);
     this.bus.emit(EVT.HAND_CHANGED, { hand: this.hand, queue: this.queue, selected: this.selected });
@@ -93,6 +105,28 @@ export class Game {
   }
 
   get goal() { return getLevelGoal(this.level); }
+
+  /**
+   * Modificatori passati all economia: eventi + stagione + sicurezza.
+   * Centralizzati qui cosi ogni sistema resta ignaro degli altri.
+   */
+  get mods() {
+    const s = this.season.modifiers;
+    return {
+      ...this.events.modifiers,
+      resEnergyMult: s.resEnergyMult,
+      season: s.season,
+      taxMultiplier: (col) => this.security.taxMultiplier(col)
+    };
+  }
+
+  /** Opzioni della fisica: rigidita dei ponti e raffiche stagionali. */
+  get physicsOpts() {
+    return {
+      windResistance: this.bridges.windResistance(this.grid),
+      windMult: this.season.modifiers.windMult
+    };
+  }
 
   /**
    * Costo corrente di un tipo: cresce con il numero di copie gia costruite
@@ -117,6 +151,13 @@ export class Game {
       imbalance: this.physics.report.effectiveImbalance,
       weather: this.weather.snapshot(),
       fires: this.events.fireCount, nextEvent: this.events.countdown,
+      season: this.season.current, seasonTurnsLeft: this.season.turnsLeft,
+      seasonMods: this.season.modifiers,
+      districts: s.districts, starvedDistricts: s.starvedDistricts,
+      bridges: this.bridges.count(this.grid),
+      windResistance: this.physics.report.windResistance || 1,
+      insecure: [...this.security.insecureColumns], markets: this.security.markets,
+      stations: this.security.stations,
       modifiers: this.events.modifiers, best: this.best,
       state: this.engine.state, mode: this.mode
     };
@@ -132,7 +173,30 @@ export class Game {
     if (s.drought) w.WAT += 12;
     if (this.economy.pollution > CONFIG.ECONOMY.POLLUTION_TOLERANCE * 0.8) w.PAR += 10;
     if (this.physics.report.maxStress > 0.85) w.SUP += 12;
+
+    // v1.1.0: i blocchi speciali compaiono solo quando hanno senso
+    const height = this.grid.maxHeight();
+    if (height <= CONFIG.SKYBRIDGE.MIN_ROW) w.BRG = 0;
+    if (height < 3) w.HEL = 0;
+    if (this.grid.listByType('WAT').length === 0) w.ECO = Math.max(1, w.ECO * 0.3);
+    if (this.security.insecureColumns.size > 0) w.POL += 18;
+    if (this.security.markets === 0) w.POL = Math.max(1, w.POL * 0.4);
+    if (this.economy.coins < 120) w.BLK += 6;
     return this.rng.weighted(w);
+  }
+
+  /**
+   * Impone una mano precisa (usato dal tutorial): cosi l istruzione mostrata
+   * a schermo e sempre eseguibile davvero.
+   */
+  forceHand(types) {
+    if (!Array.isArray(types) || !types.length) return;
+    for (let i = 0; i < this.hand.length; i++) {
+      const t = types[i % types.length];
+      if (BlockFactory.exists(t)) this.hand[i] = t;
+    }
+    this.selected = 0;
+    this.bus.emit(EVT.HAND_CHANGED, { hand: this.hand, queue: this.queue, selected: this.selected });
   }
 
   selectCard(index) {
@@ -170,24 +234,69 @@ export class Game {
 
   // --- Regole di piazzamento -------------------------------------------------
 
-  /** Verifica se il tipo puo essere piazzato nella colonna: motivo se no. */
-  canPlace(col, type) {
+  /**
+   * Verifica se il tipo puo essere piazzato. hoverRow serve ai blocchi
+   * ANCORATI (ponti, colture) che non cadono ma si posano nella cella puntata.
+   * Ritorna { ok, row, cost, span } oppure { ok:false, reason }.
+   */
+  canPlace(col, type, hoverRow = null) {
     if (this.engine.state !== STATE.PLAY) return { ok: false, reason: 'Partita in pausa' };
     if (col < 0 || col >= this.grid.cols) return { ok: false, reason: 'Fuori griglia' };
+
+    const def = BlockFactory.def(type);
+    const unit = this.costOf(type);
+
+    // --- Blocchi ancorati: non soggetti a gravita ---
+    if (def.anchored) {
+      const row = hoverRow;
+      if (row === null || row < 0 || row >= this.grid.rows) {
+        return { ok: false, reason: 'Punta una cella libera' };
+      }
+
+      if (def.spanning) {
+        const span = this.bridges.findSpan(this.grid, col, row);
+        if (!span.ok) return { ok: false, reason: span.reason };
+        const cost = unit * span.cost;
+        if (!this.economy.canAfford(cost)) return { ok: false, reason: 'Servono ' + cost + ' monete' };
+        return { ok: true, row, cost, span };
+      }
+
+      if (!this.grid.isEmpty(col, row)) return { ok: false, reason: 'Cella gia occupata' };
+      if (def.minRow !== undefined && row < def.minRow) {
+        return { ok: false, reason: 'Solo dal livello ' + (def.minRow + 1) + ' in su' };
+      }
+      if (def.needsNeighbor && row > 0 && this.grid.solidNeighbors(col, row) === 0) {
+        return { ok: false, reason: 'Serve un appoggio adiacente' };
+      }
+      if (!this.economy.canAfford(unit)) return { ok: false, reason: 'Servono ' + unit + ' monete' };
+      return { ok: true, row, cost: unit };
+    }
+
+    // --- Blocchi normali: cadono fino al primo posto libero ---
     const row = this.grid.landingRow(col);
     if (row < 0) return { ok: false, reason: 'Colonna piena' };
-    const def = BlockFactory.def(type);
-    if (def.requiresSupport && row === 0) return { ok: false, reason: 'Il parco richiede un blocco sotto' };
-    const cost = this.costOf(type);
-    if (!this.economy.canAfford(cost)) return { ok: false, reason: 'Servono ' + cost + ' monete' };
-    return { ok: true, row, cost };
+    if (def.requiresSupport && row === 0) {
+      return { ok: false, reason: def.type === 'HEL' ? 'L elisuperficie va in cima a una colonna' : 'Serve un blocco sotto' };
+    }
+    if (def.maxRow !== undefined && row > def.maxRow) {
+      return { ok: false, reason: 'Solo nelle prime ' + (def.maxRow + 1) + ' righe' };
+    }
+    if (def.minRow !== undefined && row < def.minRow) {
+      return { ok: false, reason: 'Solo dal livello ' + (def.minRow + 1) + ' in su' };
+    }
+    const below = this.grid.get(col, row - 1);
+    if (below && BlockFactory.def(below.type).blocksAbove) {
+      return { ok: false, reason: 'La pista dell elisuperficie deve restare libera' };
+    }
+    if (!this.economy.canAfford(unit)) return { ok: false, reason: 'Servono ' + unit + ' monete' };
+    return { ok: true, row, cost: unit };
   }
 
-  /** Piazza la carta selezionata nella colonna indicata e chiude il turno. */
-  placeSelected(col) {
+  /** Piazza la carta selezionata e chiude il turno. */
+  placeSelected(col, hoverRow = null) {
     const type = this.selectedType;
     if (!type) return false;
-    const check = this.canPlace(col, type);
+    const check = this.canPlace(col, type, hoverRow);
     if (!check.ok) {
       this.sound.error();
       this.bus.emit(EVT.LOG, { text: check.reason, kind: 'bad' });
@@ -198,19 +307,44 @@ export class Game {
     const def = BlockFactory.def(type);
     const cost = check.cost;
     this.economy.spend(cost);
-
     const row = check.row;
-    const cell = BlockFactory.create(type, col, row, this.turn + 1);
-    cell.anim.fall = this.grid.rows - row + 1.5;   // parte da sopra la griglia
-    cell.anim.vy = 6;
-    this.grid.set(col, row, cell);
+
+    if (check.span) {
+      // Ponte sospeso: una sola spesa, l'intera campata viene costruita
+      this.bridges.build(this.grid, check.span, this.turn + 1);
+      this.sound.place(40);
+      this.render.floaterAtCell(col, row, '-' + cost, '#ff8a80', 13);
+      this.render.shake(4);
+    } else {
+      const cell = BlockFactory.create(type, col, row, this.turn + 1);
+      if (def.anchored) {
+        cell.anim.fall = 0;
+        cell.anim.sx = 0.25;
+        cell.anim.sy = 0.25;
+      } else {
+        cell.anim.fall = this.grid.rows - row + 1.5;
+        cell.anim.vy = 6;
+      }
+      this.grid.set(col, row, cell);
+      this.sound.place(def.weight);
+      this.render.floaterAtCell(col, row, '-' + cost, '#ff8a80', 13);
+
+      // Mercato nero: incasso immediato, ma la colonna diventa sorvegliata speciale
+      if (def.instantPayout) {
+        const payout = this.security.payout(this.rng);
+        this.economy.earn(payout);
+        this.render.floaterAtCell(col, row, '+' + payout, '#ce93d8', 18);
+        this.sound.coin(4);
+        this.bus.emit(EVT.LOG, {
+          text: '🕴️ Affare al mercato nero: +' + payout + ' monete. Servira un presidio di polizia.',
+          kind: 'warn'
+        });
+      }
+    }
+
     this.lastPlacement = { col, row, type };
+    this.bus.emit(EVT.BLOCK_PLACED, { cell: this.grid.get(col, row), col, row, type });
 
-    this.sound.place(def.weight);
-    this.render.floaterAtCell(col, row, '-' + cost, '#ff8a80', 13);
-    this.bus.emit(EVT.BLOCK_PLACED, { cell, col, row, type });
-
-    // pesca una nuova carta dalla coda
     this.hand[this.selected] = this.queue.shift();
     this.queue.push(this._drawType());
     this.bus.emit(EVT.HAND_CHANGED, { hand: this.hand, queue: this.queue, selected: this.selected });
@@ -247,8 +381,8 @@ export class Game {
     this.render.shake(4);
     this.bus.emit(EVT.BLOCK_DESTROYED, { cell, col, row, reason: 'demolizione' });
 
-    this.economy.evaluate(this.grid, this.events.modifiers);
-    this.physics.analyze(this.grid, this.weather);
+    this.economy.evaluate(this.grid, this.mods);
+    this.physics.analyze(this.grid, this.weather, this.physicsOpts);
     this.bus.emit(EVT.TURN_END, this.snapshot());
     return true;
   }
@@ -266,20 +400,36 @@ export class Game {
   endTurn(info = {}) {
     this.turn++;
 
+    // 0. STAGIONE (puo cambiare i moltiplicatori usati subito dopo)
+    this.season.onTurn(this.turn);
+
     // 1. ECONOMIA
     const weatherTurn = this.weather.onTurn();
-    const summary = this.economy.applyTurn(this.grid, this.events.modifiers, this.weather);
+    const summary = this.economy.applyTurn(this.grid, this.mods, this.weather, this.turn);
     this._economyFeedback(summary);
 
     // 2. EVENTI (incendi in corso + eventuale disastro)
     const evtResult = this.events.onTurn({
       grid: this.grid, economy: this.economy, physics: this.physics,
-      weather: this.weather, turn: this.turn
+      weather: this.weather, turn: this.turn, season: this.season.modifiers
     });
     if (evtResult.event) this._eventFeedback(evtResult.event);
 
-    // 3. FISICA: stress, torsione, crolli
-    const collapses = this.physics.resolveTurn(this.grid, this.weather);
+    // 2b. ESTATE: una centrale in sovraccarico puo incendiarsi da sola
+    this._summerOverload();
+
+    // 3. CRESCITA delle colture idroponiche
+    this.growth.onTurn(this.grid, this.season.modifiers, this.turn);
+
+    // 4. PONTI: una campata senza appoggio crolla
+    const bridgeLoss = this.bridges.validate(this.grid);
+    if (bridgeLoss.length) {
+      this.physics.applyCollapses(this.grid, bridgeLoss);
+      this.sound.collapse(bridgeLoss.length);
+    }
+
+    // 5. FISICA: stress, torsione, crolli
+    const collapses = this.physics.resolveTurn(this.grid, this.weather, this.physicsOpts);
     if (collapses.length) {
       this.sound.collapse(collapses.length);
       this.bus.emit(EVT.LOG, {
@@ -287,9 +437,10 @@ export class Game {
       });
     }
 
-    // 4. Ricalcolo finale e controllo obiettivi
-    this.economy.evaluate(this.grid, this.events.modifiers);
-    this.physics.analyze(this.grid, this.weather);
+    // 6. SICUREZZA e ricalcolo finale
+    this.security.analyze(this.grid);
+    this.economy.evaluate(this.grid, this.mods);
+    this.physics.analyze(this.grid, this.weather, this.physicsOpts);
     this.best = this.save.saveBest(this.economy.score);
 
     if (weatherTurn.waterBonus > 0 && this.turn % 2 === 0) {
@@ -303,6 +454,27 @@ export class Game {
     else this._checkDeadEnd();
 
     this.autosave();
+  }
+
+  /**
+   * Crisi termica estiva: con il caldo una centrale sotto sforzo puo prendere
+   * fuoco anche senza un evento di incendio.
+   */
+  _summerOverload() {
+    const mods = this.season.modifiers;
+    if (!mods.overloadIgnition) return;
+    for (const pow of this.grid.listByType('POW')) {
+      if (pow.burning > 0) continue;
+      const stressed = pow.stress > 0.9 || this.grid.enclosure(pow.col, pow.row) >= 4;
+      if (!stressed) continue;
+      if (!this.rng.chance(mods.overloadIgnition)) continue;
+      this.events.setFire(pow, { grid: this.grid });
+      this.sound.fire();
+      this.bus.emit(EVT.LOG, {
+        text: '☀️ Crisi termica: la centrale in colonna ' + (pow.col + 1) + ' e andata in fiamme!',
+        kind: 'bad'
+      });
+    }
   }
 
   /** Feedback visivo/sonoro dei flussi economici. */
@@ -395,8 +567,8 @@ export class Game {
     this.particles.clear();
     this.physics.reset();
     this.events.reset();
-    this.economy.evaluate(this.grid, this.events.modifiers);
-    this.physics.analyze(this.grid, this.weather);
+    this.economy.evaluate(this.grid, this.mods);
+    this.physics.analyze(this.grid, this.weather, this.physicsOpts);
     this.hand = [];
     this.queue = [];
     for (let i = 0; i < CONFIG.START.HAND_SIZE; i++) this.hand.push(this._drawType());
@@ -452,6 +624,9 @@ export class Game {
       economy: this.economy.serialize(),
       weather: this.weather.serialize(),
       events: this.events.serialize(),
+      season: this.season.serialize(),
+      growth: this.growth.serialize(),
+      security: this.security.serialize(),
       hand: this.hand.slice(),
       queue: this.queue.slice()
     };
@@ -496,6 +671,10 @@ export class Game {
     this.economy.deserialize(state.economy);
     this.weather.deserialize(state.weather);
     this.events.deserialize(state.events);
+    this.season.deserialize(state.season);
+    this.growth.deserialize(state.growth);
+    this.security.deserialize(state.security);
+    this.bridges.reset();
     this.hand = (state.hand || []).filter((t) => BlockFactory.exists(t));
     this.queue = (state.queue || []).filter((t) => BlockFactory.exists(t));
     while (this.hand.length < CONFIG.START.HAND_SIZE) this.hand.push(this._drawType());
@@ -503,8 +682,9 @@ export class Game {
     this.selected = 0;
     this.mode = 'build';
     this.particles.clear();
-    this.economy.evaluate(this.grid, this.events.modifiers);
-    this.physics.analyze(this.grid, this.weather);
+    this.security.analyze(this.grid);
+    this.economy.evaluate(this.grid, this.mods);
+    this.physics.analyze(this.grid, this.weather, this.physicsOpts);
     this.render.computeLayout(this.grid.cols, this.grid.rows);
     this.engine.setState(STATE.PLAY);
     this.bus.emit(EVT.HAND_CHANGED, { hand: this.hand, queue: this.queue, selected: this.selected });

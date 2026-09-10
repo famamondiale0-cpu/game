@@ -137,6 +137,9 @@ export class Grid {
     for (let r = 0; r < this.rows; r++) {
       const cell = this.cells[r][col];
       if (!cell) continue;
+      // I blocchi ancorati (ponti, colture) non cadono: restano dove sono e
+      // fanno da appoggio fisso per cio che sta sopra.
+      if (this.isAnchored(cell)) { write = r + 1; continue; }
       if (r !== write) {
         this.cells[write][col] = cell;
         this.cells[r][col] = null;
@@ -185,15 +188,86 @@ export class Grid {
     return { min, max, width: (max - min) + 1, center: (min + max + 1) / 2, count: n };
   }
 
+
+  /** true se il blocco non e soggetto a gravita (ponti, colture idroponiche). */
+  isAnchored(cell) {
+    return !!(cell && BlockFactory.def(cell.type).anchored);
+  }
+
+  /** Numero di celle occupate ortogonalmente adiacenti. */
+  solidNeighbors(col, row) {
+    return this.neighborList(col, row).length;
+  }
+
+  /** Celle occupate entro un raggio (distanza di Chebyshev). */
+  cellsInRadius(col, row, radius) {
+    const out = [];
+    for (let r = row - radius; r <= row + radius; r++) {
+      for (let c = col - radius; c <= col + radius; c++) {
+        const cell = this.get(c, r);
+        if (cell && !(c === col && r === row)) out.push(cell);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Distretti: componenti connesse di blocchi (adiacenza ortogonale).
+   * Un ponte sospeso, riempiendo l'intera campata, unisce due torri separate
+   * in un unico distretto: e cosi che le reti di energia e acqua si fondono.
+   * Assegna cell.district e ritorna l'elenco dei distretti.
+   */
+  components() {
+    const seen = new Set();
+    const districts = [];
+
+    for (let r = 0; r < this.rows; r++) {
+      for (let c = 0; c < this.cols; c++) {
+        const start = this.cells[r][c];
+        if (!start || seen.has(start.id)) continue;
+
+        const district = { index: districts.length, cells: [], groundCols: new Set(), columns: new Set() };
+        const stack = [[c, r]];
+        seen.add(start.id);
+
+        while (stack.length) {
+          const [cc, rr] = stack.pop();
+          const cell = this.cells[rr][cc];
+          if (!cell) continue;
+          cell.district = district.index;
+          district.cells.push(cell);
+          district.columns.add(cc);
+          if (rr === 0) district.groundCols.add(cc);
+
+          const around = [[cc, rr + 1], [cc, rr - 1], [cc - 1, rr], [cc + 1, rr]];
+          for (const [nc, nr] of around) {
+            if (!this.inBounds(nc, nr)) continue;
+            const n = this.cells[nr][nc];
+            if (!n || seen.has(n.id)) continue;
+            seen.add(n.id);
+            stack.push([nc, nr]);
+          }
+        }
+        districts.push(district);
+      }
+    }
+    return districts;
+  }
+
   // --- Serializzazione ------------------------------------------------------
 
   serialize() {
     const cells = [];
     this.each((cell) => {
-      cells.push({
+      const raw = {
         i: cell.id, t: cell.type, c: cell.col, r: cell.row,
         h: Math.round(cell.integrity), b: cell.burning, p: cell.placedTurn
-      });
+      };
+      // v1.1.0: appoggi del ponte e maturazione delle colture
+      if (cell.bridge) raw.br = [cell.bridge.left, cell.bridge.right];
+      if (cell.growth) raw.g = cell.growth;
+      if (cell.generation) raw.gen = cell.generation;
+      cells.push(raw);
     });
     return { cols: this.cols, rows: this.rows, cells };
   }
@@ -210,6 +284,9 @@ export class Grid {
       cell.id = raw.i || cell.id;
       cell.integrity = typeof raw.h === 'number' ? raw.h : 100;
       cell.burning = raw.b || 0;
+      if (raw.br) cell.bridge = { row: raw.r, left: raw.br[0], right: raw.br[1] };
+      if (raw.g) cell.growth = raw.g;
+      if (raw.gen) cell.generation = raw.gen;
       maxId = Math.max(maxId, cell.id);
       this.set(raw.c, raw.r, cell);
     }

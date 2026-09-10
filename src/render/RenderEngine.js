@@ -36,6 +36,9 @@ export class RenderEngine {
 
     this.currentTilt = 0;
     this.armedCell = null;      // bersaglio confermabile su touch
+    this.hoverRow = null;
+    this.ghostRow = null;
+    this.ghostSpan = null;
     this.quality = 1;           // scala della densita di particelle
     this.hoverCol = -1;
     this.ghostType = null;
@@ -280,7 +283,7 @@ export class RenderEngine {
     ctx.save();
     ctx.translate(this.shakeX, this.shakeY);
 
-    this.drawSky(ctx, weather);
+    this.drawSky(ctx, weather, game.season && game.season.current);
     this.drawStars(ctx, weather);
     this.drawCelestial(ctx, weather);
     this.drawClouds(ctx, weather);
@@ -315,8 +318,16 @@ export class RenderEngine {
     }
   }
 
-  drawSky(ctx, weather) {
-    const c = weather.skyColors();
+  drawSky(ctx, weather, season) {
+    let c = weather.skyColors();
+    // v1.1.0: ogni stagione tinge leggermente il cielo
+    if (season && season.tint) {
+      c = {
+        top: mixColor(c.top, season.tint, 0.1),
+        mid: mixColor(c.mid, season.tint, 0.14),
+        bot: mixColor(c.bot, season.tint, 0.18)
+      };
+    }
     const g = ctx.createLinearGradient(0, 0, 0, this.height);
     g.addColorStop(0, c.top);
     g.addColorStop(0.55, c.mid);
@@ -516,13 +527,27 @@ export class RenderEngine {
     ctx.restore();
   }
 
-  /** Anteprima del blocco selezionato nella colonna sotto il cursore. */
+  /** Disegna una singola cella fantasma. */
+  _ghostCell(ctx, def, col, row, ok, alpha) {
+    const x = this.cellX(col), y = this.cellY(row);
+    const w = this.cell, h = this.cell;
+    ctx.globalAlpha = ok ? alpha : 0.4;
+    ctx.fillStyle = ok ? def.color : '#8c2f2f';
+    roundRect(ctx, x + 3, y + 3, w - 6, h - 6, 6);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = ok ? rgba(def.colorLight, 0.9) : 'rgba(255,120,120,0.9)';
+    ctx.lineWidth = 2;
+    roundRect(ctx, x + 3, y + 3, w - 6, h - 6, 6);
+    ctx.stroke();
+  }
+
+  /** Anteprima del blocco selezionato: traiettoria, campata e resa attesa. */
   drawGhost(ctx, game) {
     // bersaglio armato in modalita demolizione (conferma a due tocchi)
     if (this.armedCell && game.mode === 'demolish') {
       const a = this.armedCell;
-      const cell = game.grid.get(a.col, a.row);
-      if (cell) {
+      if (game.grid.get(a.col, a.row)) {
         const x = this.cellX(a.col), y = this.cellY(a.row);
         const pulse = 0.45 + 0.35 * Math.abs(Math.sin(this.time * 6));
         ctx.save();
@@ -538,35 +563,45 @@ export class RenderEngine {
 
     if (this.hoverCol < 0 || !this.ghostType) return;
     const col = this.hoverCol;
-    const row = game.grid.landingRow(col);
-    if (row < 0) return;
-
     const def = BlockFactory.def(this.ghostType);
-    const x = this.cellX(col), y = this.cellY(row);
+    const anchored = !!def.anchored;
+    const row = (anchored && this.ghostRow !== null && this.ghostRow !== undefined)
+      ? this.ghostRow
+      : (this.ghostValid && this.ghostRow !== null && this.ghostRow !== undefined
+        ? this.ghostRow : game.grid.landingRow(col));
+    if (row === null || row === undefined || row < 0 || row >= this.rows) return;
+
     const w = this.cell, h = this.cell;
+    const x = this.cellX(col), y = this.cellY(row);
     const pulse = 0.55 + 0.2 * Math.sin(this.time * 5);
     const ok = this.ghostValid;
 
     ctx.save();
-    // traiettoria di caduta
-    ctx.strokeStyle = ok ? rgba(def.colorLight, 0.32) : 'rgba(255,90,90,0.35)';
-    ctx.setLineDash([5, 7]);
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(x + w / 2, this.originY);
-    ctx.lineTo(x + w / 2, y);
-    ctx.stroke();
-    ctx.setLineDash([]);
 
-    ctx.globalAlpha = ok ? pulse : 0.4;
-    ctx.fillStyle = ok ? def.color : '#8c2f2f';
-    roundRect(ctx, x + 3, y + 3, w - 6, h - 6, 6);
-    ctx.fill();
-    ctx.globalAlpha = 1;
-    ctx.strokeStyle = ok ? rgba(def.colorLight, 0.9) : 'rgba(255,120,120,0.9)';
-    ctx.lineWidth = 2;
-    roundRect(ctx, x + 3, y + 3, w - 6, h - 6, 6);
-    ctx.stroke();
+    // traiettoria di caduta (solo per i blocchi soggetti a gravita)
+    if (!anchored) {
+      ctx.strokeStyle = ok ? rgba(def.colorLight, 0.32) : 'rgba(255,90,90,0.35)';
+      ctx.setLineDash([5, 7]);
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(x + w / 2, this.originY);
+      ctx.lineTo(x + w / 2, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // campata del ponte: si vedono tutti i segmenti e i due appoggi
+    if (this.ghostSpan && ok) {
+      for (const c of this.ghostSpan.cols) this._ghostCell(ctx, def, c, this.ghostSpan.row, true, pulse);
+      ctx.strokeStyle = 'rgba(120,220,255,0.85)';
+      ctx.lineWidth = 2;
+      for (const anchor of [this.ghostSpan.left, this.ghostSpan.right]) {
+        roundRect(ctx, this.cellX(anchor) + 2, this.cellY(this.ghostSpan.row) + 2, w - 4, h - 4, 6);
+        ctx.stroke();
+      }
+    } else {
+      this._ghostCell(ctx, def, col, row, ok, pulse);
+    }
 
     ctx.globalAlpha = 0.85;
     ctx.font = '700 ' + Math.round(this.cell * 0.42) + 'px Rajdhani, system-ui, sans-serif';
@@ -574,18 +609,20 @@ export class RenderEngine {
     ctx.textAlign = 'center';
     ctx.fillText(def.short, x + w / 2, y + h * 0.62);
 
-    // badge con l'anteprima di resa
+    // badge con la resa attesa
     const p = this.ghostPreview;
     if (p && ok) {
       const badges = [];
+      if (p.cost) badges.push({ t: '-' + Math.round(p.cost), c: '#ff8a80' });
       if (p.coins) badges.push({ t: (p.coins > 0 ? '+' : '') + Math.round(p.coins), c: '#ffd54f' });
       if (p.happiness) badges.push({ t: (p.happiness > 0 ? '+' : '') + Math.round(p.happiness), c: p.happiness > 0 ? '#81c784' : '#ef5350' });
       if (p.population) badges.push({ t: '+' + Math.round(p.population), c: '#64b5f6' });
       ctx.font = '700 11px Rajdhani, system-ui, sans-serif';
+      const side = col > this.cols - 3 ? -36 : w + 6;
       badges.forEach((b, i) => {
-        const bx = x + w + 6, by = y + 10 + i * 14;
+        const bx = x + side, by = y + 10 + i * 14;
         ctx.fillStyle = 'rgba(0,0,0,0.55)';
-        roundRect(ctx, bx - 2, by - 9, 30, 13, 4); ctx.fill();
+        roundRect(ctx, bx - 2, by - 9, 32, 13, 4); ctx.fill();
         ctx.fillStyle = b.c;
         ctx.textAlign = 'left';
         ctx.fillText(b.t, bx + 2, by + 1);
@@ -719,6 +756,11 @@ export class RenderEngine {
       case 'POW': this._detailPow(ctx, cell, def, w, h, night); break;
       case 'WAT': this._detailWat(ctx, cell, def, w, h, night); break;
       case 'SUP': this._detailSup(ctx, cell, def, w, h, night); break;
+      case 'BRG': this._detailBrg(ctx, cell, def, w, h, night); break;
+      case 'HEL': this._detailHel(ctx, cell, def, w, h, night); break;
+      case 'ECO': this._detailEco(ctx, cell, def, w, h, night); break;
+      case 'BLK': this._detailBlk(ctx, cell, def, w, h, night); break;
+      case 'POL': this._detailPol(ctx, cell, def, w, h, night); break;
       default: break;
     }
   }
@@ -894,6 +936,173 @@ export class RenderEngine {
     ctx.fillStyle = 'rgba(255,255,255,0.5)';
     for (const p of [[0.16, 0.16], [0.84, 0.16], [0.16, 0.84], [0.84, 0.84]]) {
       ctx.beginPath(); ctx.arc(w * p[0], h * p[1], w * 0.045, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+
+  /** Ponte sospeso: impalcato, cavi e piloni. */
+  _detailBrg(ctx, cell, def, w, h, night) {
+    // impalcato
+    ctx.fillStyle = rgba(def.colorLight, 0.75);
+    ctx.fillRect(0, h * 0.44, w, h * 0.16);
+    ctx.fillStyle = rgba(def.colorDark, 0.9);
+    ctx.fillRect(0, h * 0.58, w, h * 0.06);
+
+    // cavi sospesi
+    ctx.strokeStyle = rgba(def.colorLight, 0.6);
+    ctx.lineWidth = Math.max(1, w * 0.035);
+    ctx.beginPath();
+    ctx.moveTo(0, h * 0.16);
+    ctx.quadraticCurveTo(w * 0.5, h * 0.44, w, h * 0.16);
+    ctx.stroke();
+    for (let i = 1; i < 4; i++) {
+      const t = i / 4;
+      const cy = h * 0.16 + Math.sin(t * Math.PI) * h * 0.24;
+      ctx.beginPath();
+      ctx.moveTo(w * t, cy);
+      ctx.lineTo(w * t, h * 0.44);
+      ctx.stroke();
+    }
+
+    // luci di segnalazione notturne
+    if (night > 0.3) {
+      ctx.fillStyle = 'rgba(120,220,255,' + (0.5 + 0.4 * Math.abs(Math.sin(this.time * 2 + cell.id))) + ')';
+      ctx.fillRect(w * 0.1, h * 0.4, w * 0.1, h * 0.04);
+      ctx.fillRect(w * 0.8, h * 0.4, w * 0.1, h * 0.04);
+    }
+  }
+
+  /** Elisuperficie: piazzola con la H e rotore che gira all'arrivo dei VIP. */
+  _detailHel(ctx, cell, def, w, h, night) {
+    ctx.fillStyle = rgba(def.colorDark, 0.9);
+    ctx.fillRect(0, h * 0.34, w, h * 0.66);
+
+    // cerchio della piazzola
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)';
+    ctx.lineWidth = Math.max(1.5, w * 0.05);
+    ctx.beginPath();
+    ctx.arc(w * 0.5, h * 0.62, w * 0.3, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // la H
+    ctx.lineWidth = Math.max(2, w * 0.07);
+    ctx.beginPath();
+    ctx.moveTo(w * 0.38, h * 0.48); ctx.lineTo(w * 0.38, h * 0.76);
+    ctx.moveTo(w * 0.62, h * 0.48); ctx.lineTo(w * 0.62, h * 0.76);
+    ctx.moveTo(w * 0.38, h * 0.62); ctx.lineTo(w * 0.62, h * 0.62);
+    ctx.stroke();
+
+    // luci perimetrali lampeggianti
+    const blink = 0.35 + 0.65 * Math.abs(Math.sin(this.time * 3 + cell.id));
+    ctx.fillStyle = 'rgba(255,90,80,' + blink + ')';
+    for (const px of [0.12, 0.88]) {
+      ctx.beginPath(); ctx.arc(w * px, h * 0.4, w * 0.05, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // rotore in rotazione quando l'elicottero e in arrivo
+    if (cell.vipTimer > 0) {
+      const a = this.time * 18;
+      ctx.strokeStyle = 'rgba(230,240,255,0.85)';
+      ctx.lineWidth = Math.max(1.5, w * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(w * 0.5 - Math.cos(a) * w * 0.4, h * 0.2 - Math.sin(a) * h * 0.06);
+      ctx.lineTo(w * 0.5 + Math.cos(a) * w * 0.4, h * 0.2 + Math.sin(a) * h * 0.06);
+      ctx.stroke();
+      ctx.fillStyle = '#2b3442';
+      ctx.beginPath(); ctx.ellipse(w * 0.5, h * 0.26, w * 0.16, h * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
+  /** Idroponico: telaio con vasche, fogliame e barra di maturazione. */
+  _detailEco(ctx, cell, def, w, h, night) {
+    ctx.fillStyle = rgba(def.colorDark, 0.55);
+    ctx.fillRect(w * 0.08, h * 0.1, w * 0.84, h * 0.8);
+
+    // ripiani di coltura
+    for (let i = 0; i < 3; i++) {
+      const y = h * (0.24 + i * 0.24);
+      ctx.fillStyle = rgba(def.colorLight, 0.55);
+      ctx.fillRect(w * 0.12, y, w * 0.76, h * 0.05);
+      const sway = Math.sin(this.time * 1.6 + i + cell.id) * w * 0.02;
+      ctx.fillStyle = mixColor(def.colorLight, def.colorDark, 0.35);
+      for (let k = 0; k < 3; k++) {
+        const cx = w * (0.24 + k * 0.26) + sway;
+        ctx.beginPath();
+        ctx.ellipse(cx, y - h * 0.05, w * 0.09, h * 0.07, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // gocce di nutrimento
+    ctx.fillStyle = 'rgba(150,230,255,0.65)';
+    const drop = (this.time * 40 + cell.id * 13) % (h * 0.8);
+    ctx.fillRect(w * 0.5, h * 0.1 + drop, w * 0.035, h * 0.06);
+
+    // maturazione verso la prossima espansione
+    const p = Math.min(1, (cell.growth || 0) / 5);
+    if (p > 0) {
+      ctx.fillStyle = 'rgba(0,0,0,0.4)';
+      ctx.fillRect(w * 0.12, h * 0.92, w * 0.76, h * 0.05);
+      ctx.fillStyle = '#8BF5C0';
+      ctx.fillRect(w * 0.12, h * 0.92, w * 0.76 * p, h * 0.05);
+    }
+  }
+
+  /** Mercato nero: vicolo con insegna spenta e traffici notturni. */
+  _detailBlk(ctx, cell, def, w, h, night) {
+    ctx.fillStyle = rgba(def.colorDark, 0.9);
+    ctx.fillRect(0, h * 0.12, w, h * 0.88);
+
+    // saracinesca semiaperta
+    ctx.fillStyle = rgba(def.colorLight, 0.35);
+    for (let i = 0; i < 4; i++) ctx.fillRect(w * 0.18, h * (0.2 + i * 0.07), w * 0.64, h * 0.035);
+    ctx.fillStyle = 'rgba(10,8,20,0.92)';
+    ctx.fillRect(w * 0.18, h * 0.5, w * 0.64, h * 0.36);
+
+    // sagoma nell'ombra
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.beginPath(); ctx.arc(w * 0.5, h * 0.6, w * 0.08, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(w * 0.4, h * 0.66, w * 0.2, h * 0.2);
+
+    // insegna al neon viola, piu intensa se la colonna e insicura
+    const alert = cell.covered === false;
+    const glow = (alert ? 0.6 : 0.3) + (alert ? 0.4 : 0.2) * Math.abs(Math.sin(this.time * (alert ? 5 : 1.6) + cell.id));
+    ctx.fillStyle = 'rgba(186,104,255,' + glow + ')';
+    if (night > 0.15 || alert) { ctx.shadowColor = 'rgba(186,104,255,0.9)'; ctx.shadowBlur = w * 0.28; }
+    ctx.fillRect(w * 0.24, h * 0.06, w * 0.52, h * 0.07);
+    ctx.shadowBlur = 0;
+  }
+
+  /** Stazione di polizia: lampeggianti blu e scudo. */
+  _detailPol(ctx, cell, def, w, h, night) {
+    ctx.fillStyle = rgba(def.colorDark, 0.85);
+    ctx.fillRect(0, h * 0.2, w, h * 0.8);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(w * 0.1, h * 0.34, w * 0.8, h * 0.24);
+
+    // scudo
+    ctx.fillStyle = rgba(def.colorLight, 0.9);
+    ctx.beginPath();
+    ctx.moveTo(w * 0.5, h * 0.62);
+    ctx.lineTo(w * 0.33, h * 0.74);
+    ctx.lineTo(w * 0.36, h * 0.9);
+    ctx.lineTo(w * 0.5, h * 0.97);
+    ctx.lineTo(w * 0.64, h * 0.9);
+    ctx.lineTo(w * 0.67, h * 0.74);
+    ctx.closePath();
+    ctx.fill();
+
+    // lampeggianti alternati
+    const t = Math.sin(this.time * 5 + cell.id) > 0;
+    ctx.fillStyle = t ? 'rgba(80,160,255,0.95)' : 'rgba(40,70,140,0.5)';
+    ctx.fillRect(w * 0.16, h * 0.12, w * 0.28, h * 0.09);
+    ctx.fillStyle = t ? 'rgba(255,80,80,0.5)' : 'rgba(255,80,80,0.95)';
+    ctx.fillRect(w * 0.56, h * 0.12, w * 0.28, h * 0.09);
+    if (night > 0.25) {
+      ctx.shadowColor = t ? 'rgba(80,160,255,0.8)' : 'rgba(255,80,80,0.8)';
+      ctx.shadowBlur = w * 0.3;
+      ctx.fillRect(w * (t ? 0.16 : 0.56), h * 0.12, w * 0.28, h * 0.09);
+      ctx.shadowBlur = 0;
     }
   }
 

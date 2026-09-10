@@ -29,13 +29,44 @@
 
 html, body {
   height: 100%;
-  overflow: hidden;
+  width: 100%;
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
   font-size: 15px;
   -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Comportamento da applicazione, non da pagina web ----------
+   Niente scroll involontario, niente rimbalzo elastico, niente selezione
+   accidentale del testo e niente gesti del browser sopra il gioco.        */
+html, body {
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-overflow-scrolling: auto;
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
   user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Il tocco resta attivo dove serve davvero: pulsanti e liste scorrevoli */
+button, .card, .slot, .icon-btn { touch-action: manipulation; }
+.panel, #log, .modal-card, #modal-body {
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+
+/* Nei campi di testo la selezione deve restare possibile */
+input, textarea, [contenteditable] {
+  -webkit-user-select: text;
+  user-select: text;
+  touch-action: auto;
 }
 
 body::before {
@@ -764,4 +795,97 @@ kbd {
 
 @media (prefers-reduced-motion: reduce) {
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ---------- Tutorial guidato ---------- */
+
+.tutorial {
+  position: fixed;
+  inset: 0;
+  z-index: 120;
+  pointer-events: none;   /* il gioco resta usabile: si costruisce durante il tutorial */
+}
+
+/* Il "buco" nella penombra e il riquadro stesso, grazie a un'ombra enorme. */
+.tutorial-spot {
+  position: absolute;
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 9999px rgba(4, 7, 14, 0.72),
+    0 0 0 2px rgba(79, 195, 247, 0.9),
+    0 0 26px rgba(79, 195, 247, 0.55);
+  transition: left 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+              top 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+              width 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+              height 0.32s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.25s;
+  animation: spot-pulse 2.2s ease-in-out infinite;
+}
+.tutorial-spot[style*='opacity: 0'] { box-shadow: 0 0 0 9999px rgba(4, 7, 14, 0.72); }
+
+@keyframes spot-pulse {
+  0%, 100% { box-shadow: 0 0 0 9999px rgba(4,7,14,0.72), 0 0 0 2px rgba(79,195,247,0.9), 0 0 22px rgba(79,195,247,0.45); }
+  50%      { box-shadow: 0 0 0 9999px rgba(4,7,14,0.72), 0 0 0 3px rgba(124,77,255,0.95), 0 0 34px rgba(124,77,255,0.6); }
+}
+
+.tutorial-card {
+  position: absolute;
+  width: 360px;
+  max-width: calc(100vw - 24px);
+  padding: 18px 20px 16px;
+  border-radius: 16px;
+  background: linear-gradient(168deg, rgba(26, 34, 58, 0.98), rgba(10, 14, 26, 0.99));
+  border: 1px solid var(--stroke-strong);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.6);
+  pointer-events: auto;
+  transition: left 0.32s cubic-bezier(0.22, 1, 0.36, 1), top 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: card-in 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+@keyframes card-in { from { opacity: 0; transform: translateY(10px) scale(0.97); } }
+
+.tutorial-progress {
+  display: inline-block;
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  color: var(--accent);
+  background: rgba(79, 195, 247, 0.12);
+  border: 1px solid rgba(79, 195, 247, 0.3);
+  padding: 2px 9px;
+  border-radius: 999px;
+  margin-bottom: 9px;
+}
+.tutorial-card h2 { font-size: 17px; margin-bottom: 7px; letter-spacing: 0.02em; }
+.tutorial-card p { font-size: 13.5px; line-height: 1.5; color: var(--text-dim); }
+.tutorial-card b { color: var(--text); }
+.tutorial-card kbd { font-size: 10.5px; }
+
+.tutorial-wait {
+  margin-top: 10px;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: rgba(255, 213, 79, 0.1);
+  border: 1px solid rgba(255, 213, 79, 0.3);
+  color: var(--gold) !important;
+  font-weight: 600;
+  font-size: 12.5px !important;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+.tutorial-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.tutorial-actions .btn { padding: 8px 16px; font-size: 13px; }
+.tutorial-actions .btn.waiting { opacity: 0.45; cursor: not-allowed; }
+.tutorial-actions .btn.ghost { background: rgba(255, 255, 255, 0.06); }
+
+/* Su telefono la scheda si ancora in basso, larga quanto lo schermo */
+@media (max-width: 620px) {
+  .tutorial-card {
+    left: 12px !important;
+    right: 12px;
+    width: auto !important;
+    max-width: none;
+    padding: 15px 16px 13px;
+  }
+  .tutorial-card[data-place='center'] { top: auto !important; bottom: 16px; transform: none !important; }
+  .tutorial-card h2 { font-size: 15.5px; }
+  .tutorial-card p { font-size: 13px; }
 }

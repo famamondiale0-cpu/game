@@ -7,6 +7,40 @@ import { CONFIG } from './config/Config.js';
 import { Game } from './core/Game.js';
 import { STATE } from './core/Engine.js';
 import { UIController } from './ui/UIController.js';
+import { TutorialSystem } from './ui/TutorialSystem.js';
+
+
+/**
+ * Registra il Service Worker (cache statica + funzionamento offline).
+ * Percorso relativo: funziona anche in una sottocartella di GitHub Pages.
+ * Su file:// i Service Worker non sono ammessi, quindi si esce in silenzio.
+ */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (location.protocol === 'file:') {
+    console.info('[Zenith] Service Worker non disponibile su file:// - avvia un server locale.');
+    return;
+  }
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
+      console.log('[Zenith] Service Worker registrato:', reg.scope);
+
+      // Se e pronta una nuova versione, la si attiva al prossimo avvio
+      reg.addEventListener('updatefound', () => {
+        const sw = reg.installing;
+        if (!sw) return;
+        sw.addEventListener('statechange', () => {
+          if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+            console.log('[Zenith] Nuova versione disponibile: verra applicata al prossimo riavvio.');
+          }
+        });
+      });
+    } catch (err) {
+      console.warn('[Zenith] Registrazione Service Worker fallita:', err);
+    }
+  });
+}
 
 function boot() {
   const canvas = document.getElementById('game');
@@ -63,7 +97,20 @@ function boot() {
   if (window.visualViewport) window.visualViewport.addEventListener('resize', relayout);
 
   // Utile per il debug dalla console del browser
-  window.ZENITH = { game, ui, CONFIG, STATE };
+  // Tutorial guidato: parte da solo alla primissima partita.
+  const tutorial = new TutorialSystem(game, ui);
+  ui.tutorial = tutorial;
+  if (!TutorialSystem.seen(game.save)) {
+    const off = game.bus.on('state:changed', ({ next }) => {
+      if (next !== 'PLAY') return;
+      off();
+      setTimeout(() => tutorial.start(), 450);
+    });
+  }
+
+  registerServiceWorker();
+
+  window.ZENITH = { game, ui, tutorial, CONFIG, STATE };
   console.log('%cZENITH BLOCK v' + CONFIG.VERSION, 'color:#4fc3f7;font-weight:700');
 }
 

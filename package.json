@@ -1,17 +1,20 @@
 {
   "name": "zenith-block",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Zenith Block - city builder puzzle verticale in HTML5 Canvas e JavaScript vanilla (ES6 modulare), senza engine esterni.",
   "type": "module",
   "private": true,
   "scripts": {
     "start": "node tools/serve.mjs",
     "dev": "node tools/serve.mjs 5173",
-    "test": "node tests/core.test.mjs && node tests/game.test.mjs && node tests/mobile.test.mjs",
+    "test": "node tests/core.test.mjs && node tests/game.test.mjs && node tests/mobile.test.mjs && node tests/v11.test.mjs && node tests/tutorial.test.mjs",
     "test:core": "node tests/core.test.mjs",
     "test:game": "node tests/game.test.mjs",
     "balance": "node tests/balance-probe.mjs",
-    "test:mobile": "node tests/mobile.test.mjs"
+    "test:mobile": "node tests/mobile.test.mjs",
+    "test:v11": "node tests/v11.test.mjs",
+    "icons": "node tools/make-icons.mjs",
+    "test:tutorial": "node tests/tutorial.test.mjs"
   },
   "keywords": [
     "game",
