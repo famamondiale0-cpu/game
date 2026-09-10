@@ -1,0 +1,15 @@
+{
+  "name": "Zenith Block — Vertical Metropolis",
+  "short_name": "Zenith Block",
+  "description": "City-builder puzzle verticale in HTML5 Canvas e JavaScript vanilla.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#070A14",
+  "theme_color": "#070A14",
+  "categories": ["games", "puzzle"],
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

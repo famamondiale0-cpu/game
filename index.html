@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="description" content="Zenith Block - city builder puzzle verticale in HTML5 Canvas e JavaScript vanilla." />
+<meta name="theme-color" content="#0b0f1c" />
+<title>ZENITH BLOCK — Vertical Metropolis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Orbitron:wght@700;900&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/style.css" />
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Zenith Block" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='26' font-size='26'>🏙️</text></svg>" />
+</head>
+<body data-state="MENU" data-mode="build">
+
+<div id="app">
+
+  <!-- ══════════ HUD SUPERIORE ══════════ -->
+  <header id="hud-top">
+    <div class="brand">
+      <span class="brand-mark">ZENITH</span><span class="brand-sub">BLOCK</span>
+    </div>
+
+    <div class="chips">
+      <div class="chip" title="Monete disponibili">
+        <span class="chip-ico">🪙</span>
+        <span class="chip-body"><b data-ui="coins">0</b><small data-ui="income">+0</small></span>
+      </div>
+      <div class="chip" title="Popolazione">
+        <span class="chip-ico">👥</span>
+        <span class="chip-body"><b data-ui="population">0</b><small>abitanti</small></span>
+      </div>
+      <div class="chip meter" title="Energia prodotta / consumata">
+        <span class="chip-ico">⚡</span>
+        <span class="chip-body"><b data-ui="energy">0/0</b>
+          <span class="track"><i data-bar="energy"></i></span></span>
+      </div>
+      <div class="chip meter" title="Acqua prodotta / consumata">
+        <span class="chip-ico">💧</span>
+        <span class="chip-body"><b data-ui="water">0/0</b>
+          <span class="track"><i data-bar="water"></i></span></span>
+      </div>
+      <div class="chip meter" title="Felicita media">
+        <span class="chip-ico">😊</span>
+        <span class="chip-body"><b data-ui="happiness">50%</b>
+          <span class="track"><i data-bar="happiness"></i></span></span>
+      </div>
+      <div class="chip meter" title="Inquinamento accumulato">
+        <span class="chip-ico">☁️</span>
+        <span class="chip-body"><b data-ui="pollution">0</b>
+          <span class="track"><i data-bar="pollution"></i></span></span>
+      </div>
+      <div class="chip" title="Punteggio">
+        <span class="chip-ico">⭐</span>
+        <span class="chip-body"><b data-ui="score">0</b><small>record <span data-ui="best">0</span></small></span>
+      </div>
+    </div>
+
+    <div class="top-right">
+      <div class="weather-chip">
+        <b data-ui="weather">☀️ Sereno</b>
+        <small><span data-ui="clock">07:30</span> · <span data-ui="day">G1</span> · vento <span data-ui="wind">0%</span></small>
+      </div>
+      <div class="tools">
+        <button class="icon-btn" data-action="pause" title="Pausa (P)">⏸</button>
+        <button class="icon-btn" data-action="mute" title="Audio (M)">🔊</button>
+        <button class="icon-btn" data-action="music" title="Musica">🎵</button>
+        <button class="icon-btn only-mobile" data-action="panels" title="Statistiche e obiettivi">📊</button>
+        <button class="icon-btn" data-action="help" title="Aiuto (H)">❔</button>
+        <button class="icon-btn" data-action="menu" title="Menu">☰</button>
+      </div>
+    </div>
+  </header>
+
+  <button id="drawer-scrim" class="drawer-scrim" data-action="panels-close" aria-label="Chiudi pannelli"></button>
+
+  <!-- ══════════ PANNELLO SINISTRO ══════════ -->
+  <aside id="panel-left" class="panel">
+    <section class="card-box">
+      <h2>🎯 Distretto <span class="pill" data-ui="level">1</span></h2>
+      <p class="subtitle" data-ui="levelName">Distretto Alba</p>
+      <div class="goal">
+        <label>Popolazione <span data-ui="goalPop">0 / 40</span></label>
+        <span class="track"><i data-bar="goalPop"></i></span>
+      </div>
+      <div class="goal">
+        <label>Felicita <span data-ui="goalHappy">50 / 45</span></label>
+        <span class="track"><i data-bar="goalHappy"></i></span>
+      </div>
+      <div class="goal">
+        <label>Inquinamento <span data-ui="goalPollution">0 / 70</span></label>
+        <span class="track"><i data-bar="goalPollution"></i></span>
+      </div>
+    </section>
+
+    <section class="card-box">
+      <h2>🏗️ Struttura</h2>
+      <div class="stat-row"><span>Stato</span><b data-ui="structure" data-tone="good">STABILE</b></div>
+      <div class="goal">
+        <label>Stabilita <span data-ui="stability">100%</span></label>
+        <span class="track"><i data-bar="stability"></i></span>
+      </div>
+      <div class="stat-row"><span>Peso totale</span><b data-ui="weight">0 kg</b></div>
+      <div class="stat-row"><span>Stress max</span><b data-ui="stress">0%</b></div>
+      <div class="stat-row"><span>Sbilanciamento</span><b data-ui="imbalance">→ 0%</b></div>
+      <div class="stat-row"><span>Altezza</span><b data-ui="height">0/20</b></div>
+      <div class="stat-row"><span>Blocchi</span><b data-ui="blocks">0</b></div>
+    </section>
+
+    <section class="card-box">
+      <h2>⚠️ Eventi</h2>
+      <div class="stat-row"><span>Prossimo evento</span><b data-ui="nextEvent">4 turni</b></div>
+      <div class="stat-row"><span>Incendi attivi</span><b data-ui="fires">0</b></div>
+      <p class="mods" data-ui="modifiers">Nessun effetto attivo</p>
+    </section>
+  </aside>
+
+  <!-- ══════════ SCENA ══════════ -->
+  <main id="stage">
+    <canvas id="game" aria-label="Griglia di gioco"></canvas>
+    <div id="banner" class="banner"></div>
+    <div class="turn-badge">TURNO <b data-ui="turn">0</b> · <span data-ui="phase">giorno</span></div>
+    <div id="touch-hint" class="touch-hint"></div>
+  </main>
+
+  <!-- ══════════ PANNELLO DESTRO ══════════ -->
+  <aside id="panel-right" class="panel">
+    <section class="card-box grow">
+      <h2>📜 Cronaca</h2>
+      <div id="log"></div>
+    </section>
+    <section class="card-box">
+      <h2>🧱 Blocchi</h2>
+      <div id="legend"></div>
+    </section>
+  </aside>
+
+  <!-- ══════════ HUD INFERIORE ══════════ -->
+  <footer id="hud-bottom">
+    <div class="hand-wrap">
+      <div id="hand" class="hand"></div>
+      <div class="queue-wrap">
+        <span class="queue-label">Prossimi</span>
+        <div id="queue" class="queue"></div>
+      </div>
+    </div>
+    <div class="actions">
+      <button class="btn ghost" data-action="demolish" title="Modalita demolizione (X)">🔨 Demolisci</button>
+      <button class="btn ghost" data-action="discard" title="Scarta la carta selezionata (Q)">♻️ Scarta</button>
+      <button class="btn ghost" data-action="skip" title="Passa il turno (N)">⏭ Passa</button>
+      <button class="btn ghost" data-action="save" title="Salva">💾</button>
+      <button class="btn ghost" data-action="load" title="Carica">📂</button>
+    </div>
+  </footer>
+</div>
+
+<div id="tooltip" class="tooltip" hidden></div>
+
+<div id="modal" class="modal" hidden>
+  <div class="modal-card">
+    <h1 id="modal-title"></h1>
+    <div id="modal-body"></div>
+    <div id="modal-actions"></div>
+  </div>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0B1026"/><stop offset="1" stop-color="#243056"/>
+    </linearGradient>
+    <linearGradient id="beam" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4FC3F7"/><stop offset="1" stop-color="#7C4DFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="96" fill="url(#sky)"/>
+  <circle cx="392" cy="120" r="34" fill="#EDEFF7" opacity=".9"/>
+  <rect x="150" y="150" width="96" height="96" rx="14" fill="#3E7BFA"/>
+  <rect x="266" y="150" width="96" height="96" rx="14" fill="#3FBF6F"/>
+  <rect x="150" y="266" width="96" height="96" rx="14" fill="#F5C42B"/>
+  <rect x="266" y="266" width="96" height="96" rx="14" fill="#8A7A63"/>
+  <rect x="150" y="382" width="212" height="52" rx="14" fill="url(#beam)"/>
+  <g fill="#FFF3C4" opacity=".85">
+    <rect x="172" y="172" width="20" height="20"/><rect x="204" y="204" width="20" height="20"/>
+    <rect x="172" y="288" width="20" height="20"/><rect x="204" y="320" width="20" height="20"/>
+  </g>
+</svg>
